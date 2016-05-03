@@ -118,6 +118,10 @@ static bool handle_halt(struct guest_thread *gth)
 {
 	struct vm_trapframe *vm_tf = gth_to_vmtf(gth);
 
+	// XXX need to know the mutex of the console / wakeup and block on it
+	// 		this is basically the "we ought to wake your core" interrupt
+	// 		each guest core has its own 'halt' mutex
+	//
 	while (!consdata)
 		;
 	vm_tf->tf_rip += 1;
@@ -128,6 +132,25 @@ static bool handle_mwait(struct guest_thread *gth)
 {
 	struct vm_trapframe *vm_tf = gth_to_vmtf(gth);
 
+	// XXX same, need the mutex.  probably use a helper
+	// 		though in the future, we're actually going to need to mwait and
+	// 		notice when the addr gets touched
+	//
+	// 	seems like we need a layer of indirection for IRQs we're attempting to
+	// 	deliver to the guest, for each core.
+	// 		actually, how would this work?
+	// 		and do we need to reinject it still?  or was that just a hunch?
+	//
+	// 	also probably need a function for "send IRQ x to core y"
+	// 		that func should post and then prod a CV to wake the uthread
+	//
+	// 		and they should be able to disable IRQs too
+	// 			and there should be a step where IRQs are disabled for one
+	// 			instruction also after the reenabling, so they can halt
+	// 				that might be this interrupt window
+	//
+	// 		shit, prob need uth_cvs.  same as above.  that's how we halt.
+	// 			might need to lock and check some gpc state 
 	while (!consdata)
 		;
 	vm_tf->tf_rip += 3;
@@ -169,3 +192,36 @@ bool handle_vmexit(struct guest_thread *gth)
 		return FALSE;
 	}
 }
+
+// XXX
+#if 0
+
+// XXX and later...
+// 	this seems to be a "if we think we have data for some reason, inject the
+// 	IRQ"
+// 		was it because we thought we missed the posted?
+//
+// 		now we have the consin thread injecting/posting directly
+if (consdata) {
+	if (debug) fprintf(stderr, "inject an interrupt\n");
+	if (debug)
+		fprintf(stderr, "XINT 0x%x 0x%x\n", vm_tf->tf_intrinfo1,
+		        vm_tf->tf_intrinfo2);
+	vm_tf->tf_trap_inject = 0x80000000 | vm->virtio_irq;
+	virtio_mmio_set_vring_irq();
+	consdata = 0;
+}
+#endif
+/* 
+
+// XXX
+minor shit
+---------------------------------
+helpers for injecting traps into remote GPCs
+	e.g. handle send_ipi exit
+
+major shit
+---------------------------------
+sleep/restart gpcs on halt
+*/
+

@@ -145,6 +145,7 @@ uth_mutex_t uth_mutex_alloc(void);
 void uth_mutex_free(uth_mutex_t m);
 void uth_mutex_lock(uth_mutex_t m);
 void uth_mutex_unlock(uth_mutex_t m);
+// XXX extend for cond vars
 
 /* Generic Uthread Condition Variables.  2LSs can implement their own methods.
  * Callers to cv_wait must hold the mutex, which it will atomically wait and
