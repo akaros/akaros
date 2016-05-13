@@ -300,10 +300,10 @@ static void add_default_attribute(struct mem_file *amf, struct mem_file *mmf,
 	attr.config = config;
 	attr.mmap = 1;
 	attr.comm = 1;
+	/* Closely coupled with struct perf_record_sample */
 	attr.sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME |
-		PERF_SAMPLE_ADDR | PERF_SAMPLE_ID | PERF_SAMPLE_CPU |
-		PERF_SAMPLE_CALLCHAIN;
-
+	                   PERF_SAMPLE_ADDR | PERF_SAMPLE_ID | PERF_SAMPLE_CPU |
+	                   PERF_SAMPLE_PERIOD | PERF_SAMPLE_CALLCHAIN;
 	add_attribute(amf, mmf, &attr, &id, 1);
 }
 
@@ -439,6 +439,9 @@ static void emit_kernel_trace64(struct perf_record *pr,
 	xrec->addr = rec->trace[0];
 	xrec->id = perfconv_get_event_id(cctx, rec->info);
 	xrec->cpu = rec->cpu;
+	/* We don't know the actual sample_period at this point, but the perf report
+	 * percentages are all relative. */
+	xrec->period = 1;
 	xrec->nr = rec->num_traces - 1;
 	memcpy(xrec->ips, rec->trace + 1, (rec->num_traces - 1) * sizeof(uint64_t));
 
@@ -465,6 +468,7 @@ static void emit_user_trace64(struct perf_record *pr,
 	xrec->addr = rec->trace[0];
 	xrec->id = perfconv_get_event_id(cctx, rec->info);
 	xrec->cpu = rec->cpu;
+	xrec->period = 1;
 	xrec->nr = rec->num_traces - 1;
 	memcpy(xrec->ips, rec->trace + 1, (rec->num_traces - 1) * sizeof(uint64_t));
 
