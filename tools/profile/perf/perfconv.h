@@ -45,6 +45,8 @@ struct static_mmap64 {
 	uint64_t size;
 	uint64_t offset;
 	uint32_t pid;
+	uint32_t tid;
+	uint16_t header_misc;
 	char *path;
 };
 
@@ -73,7 +75,6 @@ struct perfconv_context {
 struct perfconv_context *perfconv_create_context(void);
 void perfconv_free_context(struct perfconv_context *cctx);
 void perfconv_set_dbglevel(int level, struct perfconv_context *cctx);
-void perfconv_add_kernel_mmap(const char *path, size_t size,
-							  struct perfconv_context *cctx);
+void perfconv_add_kernel_mmap(struct perfconv_context *cctx);
 void perfconv_process_input(struct perfconv_context *cctx, FILE *input,
 							FILE *output);

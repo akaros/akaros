@@ -682,12 +682,7 @@ void perf_convert_trace_data(struct perfconv_context *cctx, const char *input,
 	if (xfsize(infile) > 0) {
 		outfile = xfopen(output, "wb");
 
-		if (perf_get_kernel_elf_path(kpath, sizeof(kpath), &ksize))
-			perfconv_add_kernel_mmap(kpath, ksize, cctx);
-		else
-			fprintf(stderr, "Unable to fetch kernel build information!\n"
-					"Kernel traces will be missing symbol information.\n");
-
+		perfconv_add_kernel_mmap(cctx);
 		perfconv_process_input(cctx, infile, outfile);
 
 		fclose(outfile);
