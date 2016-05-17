@@ -565,6 +565,25 @@ void perfconv_process_input(struct perfconv_context *cctx, FILE *input,
 		free_record(&pr);
 	}
 
+
+
+#if 0 // XXX
+char hostname[] = "NANWAN";
+struct perf_header_string *hosthdr;
+size_t hosthdr_sz = strlen(hostname) + 1 + sizeof(struct perf_header_string);
+
+hosthdr = malloc(hosthdr_sz);
+hosthdr->len = strlen(hostname) + 1;
+memcpy(hosthdr->string, hostname, hosthdr->len);
+
+struct mem_block *mb = mem_block_alloc(&cctx->fhdrs, hosthdr_sz);
+
+mem_block_write(mb, hosthdr, hosthdr_sz);
+
+headers_add_header(&cctx->hdrs, HEADER_HOSTNAME, mb);
+#endif
+
+
 	headers_write(&cctx->hdrs, &cctx->ph, &cctx->fhdrs);
 	offset = sizeof(cctx->ph) + cctx->fhdrs.size + cctx->misc.size;
 

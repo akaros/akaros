@@ -140,6 +140,8 @@ static int perf_resolve_event_name(const char *name, uint32_t *event,
 	return idx;
 }
 
+// we were never calling this.  it was only called by another function that
+// no one called...
 static int perf_find_event_by_id(uint32_t event, uint32_t mask)
 {
 	int pmu;
@@ -166,6 +168,34 @@ static int perf_find_event_by_id(uint32_t event, uint32_t mask)
 						pfm_strerror(err));
 				exit(1);
 			}
+			// XXX then given the name, we find the event and mask, yet also
+			// pass it
+			// a mask...  (called mask hint)
+			// 		first, we look up the idx again..., then we make sure its
+			// 		the same as the idx we had originally.  if it isn't, then we
+			// 		skip over this entire entry.
+			//
+			// this seems a little backwards.  normally you get idx from the
+			// name.  instead we have the name and then look to confirm the idx.
+			// what do we do when things go wrong?
+			// 		are there more than one events with the same name in a PMU?
+			//
+			// there's some shit in there getting the mask from ainfo.code
+			// (attr, PFM_ATTR_UMASK)
+			//
+			// hell, we're just iterating, and we already have the info.  let's
+			// get the info from the *info.  then we don't worry about failure
+			//
+			//	doesn't seem like find_event works with hardcoded strings
+			//
+			//
+			// HERE!
+			//		- so eventually we'll need to know what to do there.
+			//		- we're still probably screwed over with 0x300
+			//
+			//		- trace through resolve_event_name and look at
+			//		get_event_attr_info some more
+			//
 			if (perf_resolve_event_name(info.name, &cevent, &cmask, mask) != i)
 				continue;
 			if ((cevent == event) && (cmask == mask))
@@ -174,6 +204,60 @@ static int perf_find_event_by_id(uint32_t event, uint32_t mask)
 	}
 
 	return -1;
+}
+
+/* XXX helper */
+static void perf_set_eventsel(struct perf_eventsel *sel, uint32_t event,
+                              uint32_t mask)
+{
+	PMEV_SET_EVENT(sel->ev.event, event & 0xff);
+	if (event & ~0xff) {
+		// XXX
+		// did work for 0x13c, passing in 0x3c:0x01 (as the SDM says)
+		// 			that's architectural
+		// pfm_intel_x86_encode_gen seems to do something similar.  whatever the
+		// code was, we shift it 8 then 0xff it
+		// 		though is that the same code?
+		//
+		// XXX didn't work for 0x300:0  another flag?  another place?
+		// 		0x300 claims to have a mask of -1 if you use the library for the
+		// 		lookup of UNHALTED_REFERENCE_CYCLES
+		// 			and they return us 0x300 for the event.  not supposed to be
+		// 			8 bit?
+		// XXX intel specific
+		PMEV_SET_MASK(sel->ev.event, (event >> 8) & 0xff);
+		if (mask) {
+			printf("FUCK.  event %p, mask %p\n", event, mask);
+
+		}
+	} else {
+		PMEV_SET_MASK(sel->ev.event, mask & 0xff);
+	}
+
+	printf("orig event %p, mask %p, idx %p\n", event, mask, sel->eidx);
+
+	// XXX
+	// 	this lookup works for 0x300:0xffffffff (which is what we get from hsw
+	// 	UNHALTED_REFERENCE_CYCLES).  
+	// 		0x13400001 (idx is [1] in the array intel_hsw_pe
+	//
+	// 	it does not work for 0x13c:0 or 0x300:0
+	//
+	// 	it does work for 0x3c:1 (gives us 0x1340000c, and that 134 seems like
+	// 	flags)s
+	// 		idx[c] is CPU_CLK_THREAD_UNHALTED
+	// 		how do we pick among all the 3cs?
+	// 		idx[0] = 0x3c, cntmask 20000000f
+	// 		idx[c] = 0x3c, ngrp 1, cntmask ff
+	// 		idx[d] = 0x3c, cntmask ff
+	// 	might be overriding the architectural one with something else
+	// 		and our perf list just spits out everything - not just the one we
+	// 		should use?  (or is it okay?)
+	//
+	// 	or have i been libenzi'd?
+	sel->eidx = perf_find_event_by_id(event, mask);
+	printf("final event %p, mask %p, idx %p\n", PMEV_GET_EVENT(sel->ev.event),
+	       PMEV_GET_MASK(sel->ev.event), sel->eidx);
 }
 
 void perf_initialize(int argc, char *argv[])
@@ -213,6 +297,8 @@ void perf_parse_event(const char *str, struct perf_eventsel *sel)
 	PMEV_SET_USR(sel->ev.event, 1);
 	PMEV_SET_EN(sel->ev.event, 1);
 	if (isdigit(*tok)) {
+		uint32_t event, mask;
+
 		ev = strchr(tok, ':');
 		if (ev == NULL) {
 			fprintf(stderr, "Invalid event spec string: '%s'\n"
@@ -220,8 +306,13 @@ void perf_parse_event(const char *str, struct perf_eventsel *sel)
 			exit(1);
 		}
 		*ev++ = 0;
-		PMEV_SET_EVENT(sel->ev.event, (uint8_t) strtoul(tok, NULL, 0));
-		PMEV_SET_MASK(sel->ev.event, (uint8_t) strtoul(ev, NULL, 0));
+		event = strtoul(tok, NULL, 0);
+		mask = strtoul(ev, NULL, 0);
+
+		// XXX
+		perf_set_eventsel(sel, event, mask);
+//		PMEV_SET_EVENT(sel->ev.event, (uint8_t) strtoul(tok, NULL, 0));
+//		PMEV_SET_MASK(sel->ev.event, (uint8_t) strtoul(ev, NULL, 0));
 	} else {
 		uint32_t event, mask;
 
@@ -230,8 +321,11 @@ void perf_parse_event(const char *str, struct perf_eventsel *sel)
 			fprintf(stderr, "Unable to find event: %s\n", tok);
 			exit(1);
 		}
-		PMEV_SET_EVENT(sel->ev.event, (uint8_t) event);
-		PMEV_SET_MASK(sel->ev.event, (uint8_t) mask);
+
+		// XXX
+		perf_set_eventsel(sel, event, mask);
+		//PMEV_SET_EVENT(sel->ev.event, (uint8_t) event);
+		//PMEV_SET_MASK(sel->ev.event, (uint8_t) mask);
 	}
 	while ((tok = strtok_r(NULL, ",", &sptr)) != NULL) {
 		ev = strchr(tok, '=');
@@ -631,15 +725,6 @@ void perf_get_event_string(const struct perf_eventsel *sel, char *sbuf,
 				 (int) PMEV_GET_EVENT(sel->ev.event),
 				 (int) PMEV_GET_MASK(sel->ev.event));
 	}
-}
-
-void perf_make_eventsel_from_event_mask(struct perf_eventsel *sel,
-										uint32_t event, uint32_t mask)
-{
-	ZERO_DATA(*sel);
-	PMEV_SET_EVENT(sel->ev.event, (uint8_t) event);
-	PMEV_SET_MASK(sel->ev.event, (uint8_t) mask);
-	sel->eidx = perf_find_event_by_id(event, mask);
 }
 
 static bool perf_get_kernel_elf_path(char *path, size_t psize, size_t *ksize)
