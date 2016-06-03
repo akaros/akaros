@@ -214,7 +214,8 @@ static void virtio_poke_guest(void)
 }
 
 static struct virtio_mmio_dev cons_mmio_dev = {
-	.poke_guest = virtio_poke_guest
+	.poke_guest = virtio_poke_guest,
+	.irq = 32
 };
 
 static struct virtio_console_config cons_cfg;
@@ -224,7 +225,7 @@ static struct virtio_vq_dev cons_vqdev = {
 	.name = "console",
 	.dev_id = VIRTIO_ID_CONSOLE,
 	.dev_feat = ((uint64_t)1 << VIRTIO_F_VERSION_1)
-					  | (1 << VIRTIO_RING_F_INDIRECT_DESC)
+	            | (1 << VIRTIO_RING_F_INDIRECT_DESC)
 	                  ,
 	.num_vqs = 2,
 	.cfg = &cons_cfg,
@@ -251,36 +252,41 @@ void net_receiveq_fn() {}
 void net_transmitq_fn() {}
 
 static struct virtio_mmio_dev net_mmio_dev = {
-          .poke_guest = virtio_poke_guest
+	.poke_guest = virtio_poke_guest,
+	.irq = 33
 };
 
-static struct virtio_net_config net_cfg;
+static struct virtio_net_config net_cfg = {
+	.mac = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	.max_virtqueue_pairs = 1
+};
 static struct virtio_net_config net_cfg_d;
 
 static struct virtio_vq_dev net_vqdev = {
-      .name = "network",
-      .dev_id = VIRTIO_ID_NET,
-      .dev_feat = 0,
+	.name = "network",
+	.dev_id = VIRTIO_ID_NET,
+	.dev_feat = ((uint64_t)1 << VIRTIO_F_VERSION_1
+	            | 1 << VIRTIO_NET_F_MAC),
 
-      .num_vqs = 2,
-      .cfg = &net_cfg,
-      .cfg_d = &net_cfg_d,
-      .cfg_sz = sizeof(struct virtio_net_config),
-      .transport_dev = &net_mmio_dev,
-      .vqs = {
-                       {
-                              .name = "net_recieveq",
-                              .qnum_max = 64,
-                              .srv_fn = net_receiveq_fn,
-                              .vqdev = &net_vqdev
-                       },
-                       {
-                              .name = "net_transmitq",
-                              .qnum_max = 64,
-                              .srv_fn = net_transmitq_fn,
-                              .vqdev = &net_vqdev
-                      },
-              }
+	.num_vqs = 2,
+	.cfg = &net_cfg,
+	.cfg_d = &net_cfg_d,
+	.cfg_sz = sizeof(struct virtio_net_config),
+	.transport_dev = &net_mmio_dev,
+	.vqs = {
+		{
+			.name = "net_recieveq",
+			.qnum_max = 64,
+			.srv_fn = net_receiveq_fn,
+			.vqdev = &net_vqdev
+		},
+		{
+			.name = "net_transmitq",
+			.qnum_max = 64,
+			.srv_fn = net_transmitq_fn,
+			.vqdev = &net_vqdev
+		},
+	}
 };
 
 void lowmem() {
@@ -643,8 +649,9 @@ int main(int argc, char **argv)
 		if (vm->virtio_mmio_devices[i] == NULL)
 			continue;
 		/* Append all the virtio mmio base addresses. */
-		len = snprintf(cmdlinep, cmdlinesz, " virtio_mmio.device=1K@0x%llx:32",
-		               vm->virtio_mmio_devices[i]->addr);
+		len = snprintf(cmdlinep, cmdlinesz, " virtio_mmio.device=1K@0x%llx:%lld",
+		               vm->virtio_mmio_devices[i]->addr,
+		               vm->virtio_mmio_devices[i]->irq);
 		if (len >= cmdlinesz) {
 			fprintf(stderr, "Too many arguments to the linux command line.");
 			exit(1);

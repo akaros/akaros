@@ -212,6 +212,8 @@ struct virtio_mmio_dev {
 
 	// The generic vq device contained by this mmio transport
 	struct virtio_vq_dev *vqdev;
+
+	uint64_t irq;
 };
 
 // Sets the VIRTIO_MMIO_INT_VRING bit in the interrupt status

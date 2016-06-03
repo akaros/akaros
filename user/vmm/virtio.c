@@ -32,6 +32,8 @@ const char *virtio_validate_feat(struct virtio_vq_dev *vqdev, uint64_t feat)
 		case VIRTIO_ID_CONSOLE:
 			// No interdependent features for the console.
 			break;
+		case VIRTIO_ID_NET:
+			break;
 		case 0:
 			return "Invalid device id (0x0)! On the MMIO transport, this value indicates that the device is a system memory map with placeholder devices at static, well known addresses. In any case, this is not something you validate features for.";
 		default:
