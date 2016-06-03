@@ -32,6 +32,7 @@ static bool handle_ept_fault(struct guest_thread *gth)
 			continue;
 		if (PG_ADDR(gpa) != vm->virtio_mmio_devices[i]->addr)
 			continue;
+                fprintf(stderr, "guest phyiscal address: %llx %d\n", gpa, i);
 		/* TODO: can the guest cause us to spawn off infinite threads? */
 		if (store)
 			virtio_mmio_wr(vm, vm->virtio_mmio_devices[i], gpa, size,

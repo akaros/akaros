@@ -27,7 +27,6 @@
 #include <stdint.h>
 #include <vmm/virtio_ids.h>
 #include <vmm/virtio_config.h>
-#include <linux/if_ether.h>
 
 /* The feature bitmap for virtio net */
 #define VIRTIO_NET_F_CSUM	0	/* Host handles pkts w/ partial csum */
@@ -63,7 +62,7 @@
 
 struct virtio_net_config {
 	/* The config defining mac address (if VIRTIO_NET_F_MAC) */
-	uint8_t mac[ETH_ALEN];
+	uint8_t mac[6];
 	/* See VIRTIO_NET_F_STATUS and VIRTIO_NET_S_* above */
 	uint16_t status;
 	/* Maximum number of each of transmit and receive queues;
@@ -174,7 +173,7 @@ typedef uint8_t virtio_net_ctrl_ack;
  */
 struct virtio_net_ctrl_mac {
 	uint32_t entries;
-	uint8_t macs[][ETH_ALEN];
+	uint8_t macs[][6];
 } __attribute__((packed));
 
 #define VIRTIO_NET_CTRL_MAC    1

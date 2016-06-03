@@ -27,6 +27,7 @@
 #include <vmm/virtio_ids.h>
 #include <vmm/virtio_config.h>
 #include <vmm/virtio_console.h>
+#include <vmm/virtio_net.h>
 #include <vmm/virtio_lguest_console.h>
 
 #include <vmm/sched.h>
@@ -246,6 +247,41 @@ static struct virtio_vq_dev cons_vqdev = {
 		}
 };
 
+void net_receiveq_fn() {}
+void net_transmitq_fn() {}
+
+static struct virtio_mmio_dev net_mmio_dev = {
+          .poke_guest = virtio_poke_guest
+};
+
+static struct virtio_net_config net_cfg;
+static struct virtio_net_config net_cfg_d;
+
+static struct virtio_vq_dev net_vqdev = {
+      .name = "network",
+      .dev_id = VIRTIO_ID_NET,
+      .dev_feat = 0,
+
+      .num_vqs = 2,
+      .cfg = &net_cfg,
+      .cfg_d = &net_cfg_d,
+      .cfg_sz = sizeof(struct virtio_net_config),
+      .transport_dev = &net_mmio_dev,
+      .vqs = {
+                       {
+                              .name = "net_recieveq",
+                              .qnum_max = 64,
+                              .srv_fn = net_receiveq_fn,
+                              .vqdev = &net_vqdev
+                       },
+                       {
+                              .name = "net_transmitq",
+                              .qnum_max = 64,
+                              .srv_fn = net_transmitq_fn,
+                              .vqdev = &net_vqdev
+                      },
+              }
+};
 
 void lowmem() {
 	__asm__ __volatile__ (".section .lowmem, \"aw\"\n\tlow: \n\t.=0x1000\n\t.align 0x100000\n\t.previous\n");
@@ -584,6 +620,11 @@ int main(int argc, char **argv)
 	cons_mmio_dev.addr = virtio_mmio_base_addr;
 	cons_mmio_dev.vqdev = &cons_vqdev;
 	vm->virtio_mmio_devices[VIRTIO_MMIO_CONSOLE_DEV] = &cons_mmio_dev;
+
+        net_mmio_dev.addr = cons_mmio_dev.addr + 4096;
+        net_mmio_dev.vqdev = &net_vqdev;
+        vm->virtio_mmio_devices[VIRTIO_MMIO_NETWORK_DEV] = &net_mmio_dev;
+
 
 	/* Set the kernel command line parameters */
 	a += 4096;
