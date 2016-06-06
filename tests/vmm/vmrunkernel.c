@@ -207,14 +207,14 @@ void timer_thread(void *arg)
 // FIXME.
 volatile int consdata = 0;
 
-static void virtio_poke_guest(void)
+static void virtio_cons_poke_guest(void)
 {
 	set_posted_interrupt(0xE5);
 	ros_syscall(SYS_vmm_poke_guest, 0, 0, 0, 0, 0, 0);
 }
 
 static struct virtio_mmio_dev cons_mmio_dev = {
-	.poke_guest = virtio_poke_guest,
+	.poke_guest = virtio_cons_poke_guest,
 	.irq = 32
 };
 
@@ -248,19 +248,49 @@ static struct virtio_vq_dev cons_vqdev = {
 		}
 };
 
-void net_receiveq_fn() {}
-void net_transmitq_fn() {}
+void net_receiveq_fn() {
+	fprintf(stderr, "Intializing receiveq\n");
+}
+void net_transmitq_fn(void *_vq) {
+	struct virtio_vq *vq = _vq;
+	uint32_t head;
+	uint32_t olen, ilen;
+	uint32_t i, j;
+	struct iovec *iov;
+
+	iov = malloc(vq->qnum_max * sizeof(struct iovec));
+	head = virtio_next_avail_vq_desc(vq, iov, &olen, &ilen);
+
+	if (ilen) {
+		VIRTIO_DRI_ERRX(vq->vqdev,
+		"The driver placed a device-writeable buffer in the network device's transmitq.\n"
+		"  See virtio-v1.0-cs04 s5.3.6.1 Device Operation");
+	}
+
+	fprintf(stderr, "Got something");
+
+	virtio_add_used_desc(vq, head, 0);
+}
+
+static void virtio_net_poke_guest(void)
+{
+	set_posted_interrupt(0xE6);
+	ros_syscall(SYS_vmm_poke_guest, 0, 0, 0, 0, 0, 0);
+}
 
 static struct virtio_mmio_dev net_mmio_dev = {
-	.poke_guest = virtio_poke_guest,
-	.irq = 33
+	.poke_guest = virtio_net_poke_guest,
+	.irq = 29
 };
 
 static struct virtio_net_config net_cfg = {
-	.mac = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	.mac = {0xec, 0xb1, 0xd7, 0x42, 0x90, 0xbf},
 	.max_virtqueue_pairs = 1
 };
-static struct virtio_net_config net_cfg_d;
+static struct virtio_net_config net_cfg_d = {
+	.mac = {0xec, 0xb1, 0xd7, 0x42, 0x90, 0xbf},
+	.max_virtqueue_pairs = 1
+};
 
 static struct virtio_vq_dev net_vqdev = {
 	.name = "network",
