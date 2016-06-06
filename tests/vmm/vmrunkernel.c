@@ -27,6 +27,7 @@
 #include <vmm/virtio_ids.h>
 #include <vmm/virtio_config.h>
 #include <vmm/virtio_console.h>
+#include <vmm/virtio_net.h>
 #include <vmm/virtio_lguest_console.h>
 
 #include <vmm/sched.h>
@@ -206,14 +207,15 @@ void timer_thread(void *arg)
 // FIXME.
 volatile int consdata = 0;
 
-static void virtio_poke_guest(void)
+static void virtio_cons_poke_guest(void)
 {
 	set_posted_interrupt(0xE5);
 	ros_syscall(SYS_vmm_poke_guest, 0, 0, 0, 0, 0, 0);
 }
 
 static struct virtio_mmio_dev cons_mmio_dev = {
-	.poke_guest = virtio_poke_guest
+	.poke_guest = virtio_cons_poke_guest,
+	.irq = 32
 };
 
 static struct virtio_console_config cons_cfg;
@@ -223,7 +225,7 @@ static struct virtio_vq_dev cons_vqdev = {
 	.name = "console",
 	.dev_id = VIRTIO_ID_CONSOLE,
 	.dev_feat = ((uint64_t)1 << VIRTIO_F_VERSION_1)
-					  | (1 << VIRTIO_RING_F_INDIRECT_DESC)
+	            | (1 << VIRTIO_RING_F_INDIRECT_DESC)
 	                  ,
 	.num_vqs = 2,
 	.cfg = &cons_cfg,
@@ -246,6 +248,76 @@ static struct virtio_vq_dev cons_vqdev = {
 		}
 };
 
+void net_receiveq_fn() {
+	fprintf(stderr, "Intializing receiveq\n");
+}
+void net_transmitq_fn(void *_vq) {
+	struct virtio_vq *vq = _vq;
+	uint32_t head;
+	uint32_t olen, ilen;
+	uint32_t i, j;
+	struct iovec *iov;
+
+	iov = malloc(vq->qnum_max * sizeof(struct iovec));
+	head = virtio_next_avail_vq_desc(vq, iov, &olen, &ilen);
+
+	if (ilen) {
+		VIRTIO_DRI_ERRX(vq->vqdev,
+		"The driver placed a device-writeable buffer in the network device's transmitq.\n"
+		"  See virtio-v1.0-cs04 s5.3.6.1 Device Operation");
+	}
+
+	fprintf(stderr, "Got something");
+
+	virtio_add_used_desc(vq, head, 0);
+}
+
+static void virtio_net_poke_guest(void)
+{
+	set_posted_interrupt(0xE6);
+	ros_syscall(SYS_vmm_poke_guest, 0, 0, 0, 0, 0, 0);
+}
+
+static struct virtio_mmio_dev net_mmio_dev = {
+	.poke_guest = virtio_net_poke_guest,
+	.irq = 29
+};
+
+static struct virtio_net_config net_cfg = {
+	.mac = {0xec, 0xb1, 0xd7, 0x42, 0x90, 0xbf},
+	.max_virtqueue_pairs = 1
+};
+static struct virtio_net_config net_cfg_d = {
+	.mac = {0xec, 0xb1, 0xd7, 0x42, 0x90, 0xbf},
+	.max_virtqueue_pairs = 1
+};
+
+static struct virtio_vq_dev net_vqdev = {
+	.name = "network",
+	.dev_id = VIRTIO_ID_NET,
+	.dev_feat = ((uint64_t)1 << VIRTIO_F_VERSION_1
+	            | 1 << VIRTIO_NET_F_MAC),
+
+	.num_vqs = 2,
+	.cfg = &net_cfg,
+	.cfg_d = &net_cfg_d,
+	.cfg_sz = sizeof(struct virtio_net_config),
+	.transport_dev = &net_mmio_dev,
+	.vqs = {
+		{
+			.name = "net_recieveq",
+			.qnum_max = 64,
+			.srv_fn = net_receiveq_fn,
+			.vqdev = &net_vqdev
+		},
+		{
+			.name = "net_transmitq",
+			.qnum_max = 64,
+			.srv_fn = net_transmitq_fn,
+			.vqdev = &net_vqdev
+		},
+	}
+};
 
 void lowmem() {
 	__asm__ __volatile__ (".section .lowmem, \"aw\"\n\tlow: \n\t.=0x1000\n\t.align 0x100000\n\t.previous\n");
@@ -585,6 +657,11 @@ int main(int argc, char **argv)
 	cons_mmio_dev.vqdev = &cons_vqdev;
 	vm->virtio_mmio_devices[VIRTIO_MMIO_CONSOLE_DEV] = &cons_mmio_dev;
 
+        net_mmio_dev.addr = cons_mmio_dev.addr + 4096;
+        net_mmio_dev.vqdev = &net_vqdev;
+        vm->virtio_mmio_devices[VIRTIO_MMIO_NETWORK_DEV] = &net_mmio_dev;
+
+
 	/* Set the kernel command line parameters */
 	a += 4096;
 	cmdline = a;
@@ -602,8 +679,9 @@ int main(int argc, char **argv)
 		if (vm->virtio_mmio_devices[i] == NULL)
 			continue;
 		/* Append all the virtio mmio base addresses. */
-		len = snprintf(cmdlinep, cmdlinesz, " virtio_mmio.device=1K@0x%llx:32",
-		               vm->virtio_mmio_devices[i]->addr);
+		len = snprintf(cmdlinep, cmdlinesz, " virtio_mmio.device=1K@0x%llx:%lld",
+		               vm->virtio_mmio_devices[i]->addr,
+		               vm->virtio_mmio_devices[i]->irq);
 		if (len >= cmdlinesz) {
 			fprintf(stderr, "Too many arguments to the linux command line.");
 			exit(1);
